@@ -209,6 +209,11 @@ configured Anthropic model and refuses a mismatch. Runtime `assistant.usage`
 events log the model and token counts, without prompts or credentials. These
 logs provide evidence independent of an agent's self-description.
 
+The SDK request handler removes `temperature`, `top_p`, and `top_k` from direct
+Anthropic Messages requests. The pinned CLI adds a temperature that Fable 5.1
+rejects; these requests use Anthropic's sampling defaults. Other endpoints pass
+through unchanged, and responses retain streaming and cancellation support.
+
 Public research uses Anthropic's Messages API directly with only the disclosed
 query and the basic `web_search_20250305` server tool. It has no private document,
 repository, filesystem, or client tools. Search results and citations must agree;
@@ -223,6 +228,6 @@ GitHub's web-search MCP configuration is used only in Copilot mode. Private
 analysis and synthesis stay in separate no-web SDK sessions in both modes.
 
 `bun run test:anthropic` exercises the pinned CLI against a local mock Anthropic
-endpoint, including wire model/key routing, streaming, tool permission checks,
-and terminal results. It requires local socket access but no API key or Copilot
-login. It does not establish live model availability for a deployment's key.
+endpoint, including rejection of deprecated sampling parameters, wire model/key
+routing, streaming, tool permission checks, and terminal results. It requires
+local socket access but no API key or Copilot login. It does not establish live model availability for a deployment's key.
