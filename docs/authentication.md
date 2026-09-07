@@ -54,8 +54,9 @@ old permissions until the owner approves the update.
 
 No App ID, private key, JWT, installation access token, or webhook secret is
 used. Chopin acts on behalf of each signed-in user with a GitHub App user access
-token so repository-role checks and the user's Copilot entitlement remain
-theirs.
+token so repository-role checks remain tied to that user. In Copilot mode the
+user also supplies the model entitlement. In Anthropic mode a separate deployment
+API key supplies inference; it never replaces GitHub repository authorization.
 
 Configure Chopin with the App's slug and OAuth client credentials. A minimal
 production environment contains:

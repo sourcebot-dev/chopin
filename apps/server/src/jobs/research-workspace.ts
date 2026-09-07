@@ -3,6 +3,7 @@ import * as limits from "@chopin/dialect/limits";
 
 import * as Agent from "../agent/client";
 import { PUBLIC_WEB_SEARCH_SERVER, PUBLIC_WEB_SEARCH_TOOL } from "../agent/permissions";
+import { anthropicResearch } from "./anthropic-research";
 import { JobExecutionError } from "./registry";
 
 import type { Tool } from "@github/copilot-sdk";
@@ -155,12 +156,12 @@ export type ResearchAnswerEngines = {
 };
 
 export type ResearchEvidenceOptions = {
-	config: Pick<Config, "agent" | "model">;
+	config: Pick<Config, "agent" | "model" | "anthropic">;
 	engine?: ResearchEvidenceEngine;
 };
 
 export type ResearchAnswerOptions = {
-	config: Pick<Config, "agent" | "model">;
+	config: Pick<Config, "agent" | "model" | "anthropic">;
 	engines?: ResearchAnswerEngines;
 };
 
@@ -901,7 +902,7 @@ async function classified<T>(operation: () => Promise<T>, reason: string): Promi
 }
 
 async function stage(
-	config: Pick<Config, "agent" | "model">,
+	config: Pick<Config, "agent" | "model" | "anthropic">,
 	execution: JobExecution<ResearchEvidenceInput | ResearchAnswerInput>,
 	name: string,
 	prompt: string,
@@ -1163,8 +1164,9 @@ async function stage(
 }
 
 function defaultEvidenceEngine(
-	config: Pick<Config, "agent" | "model">,
+	config: Pick<Config, "agent" | "model" | "anthropic">,
 ): ResearchEvidenceEngine {
+	if (config.anthropic) return (execution, query) => anthropicResearch(config, execution, query);
 	return async (execution, query) => {
 		try {
 			return verifiableEvidence(publicEvidence(
@@ -1192,7 +1194,7 @@ function defaultEvidenceEngine(
 }
 
 function defaultAnswerEngines(
-	config: Pick<Config, "agent" | "model">,
+	config: Pick<Config, "agent" | "model" | "anthropic">,
 ): ResearchAnswerEngines {
 	return {
 		private: async (execution, question, source) =>

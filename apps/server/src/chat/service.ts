@@ -76,7 +76,7 @@ type Waiting = Wire.Waiting & {
 	message?: boolean;
 	/** The comment thread this turn was started to act on, if one was. */
 	thread?: string;
-	/** Login session whose Copilot entitlement owns this queued turn. */
+	/** Login session whose repository authorization owns this queued turn. */
 	sessionId?: string;
 	/** Verified member identity, retained only for a queued composer message. */
 	userId?: string;
@@ -908,7 +908,7 @@ async function repositorySession(
 		owner.session.expiresAt.getTime(),
 	);
 	if (credentialExpiresAt <= Date.now() + CREDENTIAL_EXPIRY_SKEW_MS) {
-		throw new Error("The Copilot owner's login session is about to expire. Sign in again.");
+		throw new Error("The Planner owner's login session is about to expire. Sign in again.");
 	}
 	let openingOwner = {
 		sessionId: ownerSessionId,
@@ -1046,10 +1046,10 @@ export async function resolveOwner(
 		new Date(),
 	);
 	let ownerSessionId = ownership.ownerSessionId;
-	if (!ownerSessionId) throw new Error("This channel's Copilot owner is unavailable.");
+	if (!ownerSessionId) throw new Error("This channel's Planner owner is unavailable.");
 	let owner = await auth.sessions.resolve(ownerSessionId);
 	if (!owner) {
-		throw new Error("The Copilot owner must sign in again or reset this channel's agent.");
+		throw new Error("The Planner owner must sign in again or reset this channel's agent.");
 	}
 	let checked = await auth.sessions.use(
 		owner,
@@ -1061,7 +1061,7 @@ export async function resolveOwner(
 		!current
 		|| current.id !== repository.id
 		|| (!current.permissions.push && !current.permissions.admin)
-	) throw new Error("The Copilot owner no longer has repository write access.");
+	) throw new Error("The Planner owner no longer has repository write access.");
 	return { ownership, owner, repository };
 }
 

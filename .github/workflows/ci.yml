@@ -67,6 +67,9 @@ jobs:
       # spawn a server; nothing here needs a token.
       - run: bun test
 
+      - name: Test Anthropic provider contract without live credentials
+        run: bun run test:anthropic
+
       # Every durable provider passes the same behavioral contract. The ordinary
       # unit command leaves this one skipped so it stays usable without Docker.
       - run: bun run test:postgres

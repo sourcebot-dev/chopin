@@ -55,11 +55,11 @@ bearer tokens and browser sessions traverse it.
 - Docker for the application image, or Bun 1.3.2 for a source deployment.
 - A reachable PostgreSQL database and credentials with schema migration access.
 - A stable DNS name with TLS termination and WebSocket proxying.
-- Outbound HTTPS access to GitHub and the hosted Copilot service.
+- Outbound HTTPS access to GitHub and the selected inference provider.
 - A GitHub App owned by the deployment.
 - At least one user with repository push or administration access.
-- An active Copilot entitlement for each user who may own a hosted agent
-  session.
+- An active Copilot entitlement for each prospective Planner owner, or an
+  Anthropic API key for the deployment.
 
 ## Register the GitHub App
 
@@ -94,27 +94,74 @@ Store production values in the deployment's secret manager or an owner-readable
 environment file outside the source tree. Do not bake `.env` or credentials into
 the image.
 
-| Variable                       | Default             | Meaning                                                                                                                            |
-| ------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `STORAGE_DRIVER`               | `postgres`          | Storage adapter. `postgres` is currently the only accepted value.                                                                  |
-| `DATABASE_URL`                 | required            | `postgres:` or `postgresql:` connection URL. It is not printed by Chopin.                                                          |
-| `APP_ORIGIN`                   | required            | Exact public origin, without credentials, path, query, fragment, or trailing slash. HTTPS is required unless the host is loopback. |
-| `GITHUB_APP_SLUG`              | required            | Lowercase slug from the App's public URL.                                                                                          |
-| `GITHUB_APP_CLIENT_ID`         | required            | OAuth client ID, not the numeric GitHub App ID.                                                                                    |
-| `GITHUB_APP_CLIENT_SECRET`     | required            | OAuth client secret used for user-token exchange and refresh.                                                                      |
-| `GITHUB_ALLOWED_USERS`         | empty               | Comma-separated admitted GitHub logins.                                                                                            |
-| `GITHUB_ALLOWED_ORGANIZATIONS` | empty               | Comma-separated organizations whose active members are admitted.                                                                   |
-| `SESSION_ENCRYPTION_KEY`       | required            | Exactly 64 hexadecimal characters used for the encrypted OAuth attempt cookie, including its validated return path.                |
-| `SERVER_HOST`                  | `127.0.0.1`         | Source-process bind address. The image sets `0.0.0.0`.                                                                             |
-| `PORT`                         | `8787`              | Source-process HTTP and WebSocket port. The supplied image and health check expect internal port 8787.                             |
-| `MODEL`                        | `claude-sonnet-4.6` | Model requested for hosted agent sessions.                                                                                         |
-| `AGENT`                        | on                  | Set exactly `off` to prevent hosted agent turns, disable the entire background-job runner, and avoid Copilot CLI startup.          |
-| `BACKGROUND_JOBS`              | on                  | Set exactly `off` to disable background job scheduling. `AGENT=off` disables the entire runner.                                    |
-| `WEB_RESEARCH`                 | on                  | Set exactly `off` to disable new public-web research while retaining durable requests, artifacts, and other jobs.                  |
-| `COPILOT_CLI_PATH`             | automatic           | Advanced override for the Copilot CLI executable.                                                                                  |
+| Variable                       | Default                    | Meaning                                                                                                                            |
+| ------------------------------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `STORAGE_DRIVER`               | `postgres`                 | Storage adapter. `postgres` is currently the only accepted value.                                                                  |
+| `DATABASE_URL`                 | required                   | `postgres:` or `postgresql:` connection URL. It is not printed by Chopin.                                                          |
+| `APP_ORIGIN`                   | required                   | Exact public origin, without credentials, path, query, fragment, or trailing slash. HTTPS is required unless the host is loopback. |
+| `GITHUB_APP_SLUG`              | required                   | Lowercase slug from the App's public URL.                                                                                          |
+| `GITHUB_APP_CLIENT_ID`         | required                   | OAuth client ID, not the numeric GitHub App ID.                                                                                    |
+| `GITHUB_APP_CLIENT_SECRET`     | required                   | OAuth client secret used for user-token exchange and refresh.                                                                      |
+| `GITHUB_ALLOWED_USERS`         | empty                      | Comma-separated admitted GitHub logins.                                                                                            |
+| `GITHUB_ALLOWED_ORGANIZATIONS` | empty                      | Comma-separated organizations whose active members are admitted.                                                                   |
+| `SESSION_ENCRYPTION_KEY`       | required                   | Exactly 64 hexadecimal characters used for the encrypted OAuth attempt cookie, including its validated return path.                |
+| `SERVER_HOST`                  | `127.0.0.1`                | Source-process bind address. The image sets `0.0.0.0`.                                                                             |
+| `PORT`                         | `8787`                     | Source-process HTTP and WebSocket port. The supplied image and health check expect internal port 8787.                             |
+| `MODEL`                        | provider default           | Model requested for hosted agent sessions; use the provider's exact model ID.                                                      |
+| `AGENT_PROVIDER`               | `copilot`                  | `copilot` or `anthropic`. Anthropic mode uses direct API inference through SDK BYOK.                                               |
+| `ANTHROPIC_API_KEY`            | required in Anthropic mode | Server-only Anthropic API key; never delivered to the browser or stored in PostgreSQL.                                             |
+| `AGENT`                        | on                         | Set exactly `off` to prevent hosted agent turns, disable the entire background-job runner, and avoid Copilot CLI startup.          |
+| `BACKGROUND_JOBS`              | on                         | Set exactly `off` to disable background job scheduling. `AGENT=off` disables the entire runner.                                    |
+| `WEB_RESEARCH`                 | on                         | Set exactly `off` to disable new public-web research while retaining durable requests, artifacts, and other jobs.                  |
+| `COPILOT_CLI_PATH`             | automatic                  | Advanced override for the Copilot CLI executable.                                                                                  |
 
 See [Background jobs and workers](background-jobs.md) for the combined
 `AGENT`, `BACKGROUND_JOBS`, and `WEB_RESEARCH` behavior and recovery model.
+
+### Anthropic API inference
+
+Set the following on the app service and restart it:
+
+```dotenv
+AGENT_PROVIDER=anthropic
+MODEL=claude-fable-5-1
+ANTHROPIC_API_KEY=<injected server-side secret>
+```
+
+With no `MODEL`, Copilot mode defaults to `claude-sonnet-4.6` and Anthropic mode
+defaults to `claude-fable-5-1`. Anthropic uses hyphens in its API ID; do not reuse
+Copilot's `claude-fable-5.1` ID. Merely setting the API key does not switch the
+provider. Missing keys and unknown providers are startup errors, with no fallback
+to Copilot. The bundled SDK/CLI remains required in both modes.
+
+For an AWS deployment, keep the key in Secrets Manager, grant the app host access
+to that secret, and inject `ANTHROPIC_API_KEY` into the app's runtime environment.
+The provided Compose file passes through `AGENT_PROVIDER` and `ANTHROPIC_API_KEY`.
+An external host/Compose wrapper must also forward those variables. Avoid putting
+the secret value in source, CDK templates, build arguments, or workflow logs.
+This repository does not provision the external AWS deployment's secret or IAM.
+
+GitHub OAuth and repository permission checks continue to use each user's GitHub
+App token. The Anthropic key pays for all enabled users' model calls; it does not
+grant repository access. Public research uses Anthropic web search rather than
+GitHub's Copilot search service. The Anthropic account must have access to the
+selected model and web search; set `WEB_RESEARCH=off` to run without public research.
+See [SDK BYOK](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/byok) and
+[Anthropic web search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)
+for provider requirements.
+
+Copilot credit ceilings do not apply to BYOK. Background jobs retain their
+existing deadlines and input/artifact bounds, and direct public search has
+explicit request/search/output limits. Planner and private-worker output limits
+are selected by the pinned SDK runtime: its advertised `provider.maxOutputTokens`
+override was not honored in the local contract probe, so Chopin does not expose
+that setting or claim a per-session dollar/token budget. Configure the Anthropic
+workspace's spend limits before sharing a deployment. Usage logs record the
+runtime-reported model and token counts without including the API key or prompts.
+
+The switch does not require a database migration. Verify a Planner edit and a
+research request with the deployment's own key after restarting; mocked provider
+tests cannot confirm live account access or model behavior.
 
 Generate the encryption key with:
 
@@ -237,7 +284,7 @@ zero, so a policy equivalent to `Restart=on-failure` is insufficient.
 
 Startup validates configuration, database connectivity, migration history, and
 the exclusive writer lease before serving traffic. It does not fully validate
-the GitHub App, Copilot entitlement, model, or lazy Planner runtime.
+the GitHub App, inference credentials, model, or lazy Planner runtime.
 
 After the first deployment:
 
@@ -248,7 +295,7 @@ After the first deployment:
 4. Confirm the picker lists only expected installations and repositories.
 5. Create a channel with a user who has push or administration access.
 6. Open the channel in a second browser and verify presence and live edits.
-7. Send one `@chopin` request to verify the owner's Copilot entitlement and the
+7. Send one `@chopin` request to verify the configured inference credentials and the
    hosted agent runtime.
 8. Connect a local coding agent and call `list_documents` if MCP is part of the
    deployment's intended surface.

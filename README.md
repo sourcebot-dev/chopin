@@ -70,13 +70,14 @@ and tool vocabulary remain optimized for planning.
 - Pull access can view channels. Push or administration access is required to
   create or change them and to invoke the Planner.
 - The first eligible person to invoke the Planner or start a model-backed
-  research request supplies the GitHub App user token and Copilot entitlement
-  used for that channel. A server restart signs everyone out and releases that
+  research request supplies the GitHub App user token used for that channel.
+  Copilot mode also uses that user's Copilot entitlement; Anthropic mode uses
+  the deployment's API key. A server restart signs everyone out and releases that
   ownership.
 - Document and Chat context, along with repository material selected by
-  the Planner, is sent to GitHub Copilot during a turn. Model-backed background
+  the Planner, is sent to the configured inference provider (GitHub Copilot or Anthropic) during a turn. Model-backed background
   jobs also send job-specific private material, including context loaded during
-  execution, to isolated Copilot workers. The public research worker receives
+  execution, to isolated agent workers using the same provider. The public research worker receives
   only the exact submitted brief, but may derive or refine the queries it sends
   to web search. GitHub credentials remain process-local;
   documents, transcripts, decisions, research request staging, background-job
@@ -94,7 +95,8 @@ The development path requires:
 - Docker Engine with Docker Compose, used for PostgreSQL;
 - a GitHub App owned by the deployment; and
 - a GitHub account with push or administration access to a test repository and,
-  to use the Planner, an active Copilot entitlement.
+  to use the Planner, either an active Copilot entitlement or a deployment
+  Anthropic API key. See [Anthropic configuration](docs/self-hosting.md#anthropic-api-inference).
 
 Register these local URLs on the GitHub App:
 
@@ -151,7 +153,7 @@ yes, Markdown for now                  -> channel chat transcript
 The recent channel chat transcript is supplied as bounded context for the next turn,
 even when those messages did not address the Planner. The first eligible
 model-backed action, either a Planner turn or research request, claims the
-channel's Copilot usage until that owner's session ends or the server restarts.
+channel's Planner ownership until that owner's session ends or the server restarts.
 The current web interface has no control for transferring that ownership
 manually.
 

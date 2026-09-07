@@ -28,7 +28,7 @@ export type GateOptions = {
 export function gate(options: GateOptions): PermissionHandler {
 	return async (request: PermissionRequest): Promise<PermissionRequestResult> => {
 		if (options.active && !(await options.active())) {
-			return deny("The Copilot owner or repository permission is no longer active.");
+			return deny("The Planner owner or repository permission is no longer active.");
 		}
 		if (request.kind === "custom-tool") {
 			return options.tools.has(request.toolName)
@@ -62,7 +62,7 @@ export function terminalGate(
 ): PermissionHandler {
 	return async (request: PermissionRequest): Promise<PermissionRequestResult> => {
 		if (active && !(await active())) {
-			return deny("The Copilot owner is no longer active.");
+			return deny("The Planner owner is no longer active.");
 		}
 		return request.kind === "custom-tool" && request.toolName === tool
 			? allow()
@@ -77,7 +77,7 @@ export function publicResearchGate(
 	onWebSearchDenied?: () => void,
 ): PermissionHandler {
 	return async (request: PermissionRequest): Promise<PermissionRequestResult> => {
-		if (active && !(await active())) return deny("The Copilot owner is no longer active.");
+		if (active && !(await active())) return deny("The Planner owner is no longer active.");
 		if (request.kind === "custom-tool") {
 			return request.toolName === resultTool
 				? allow()

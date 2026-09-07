@@ -7,6 +7,7 @@ import {
 	plannerConfiguration,
 	publicResearchConfiguration,
 	RUNTIME_ENV,
+	verifyModel,
 	workerConfiguration,
 } from "./client";
 import { gate, publicResearchGate, terminalGate } from "./permissions";
@@ -51,6 +52,56 @@ describe("hosted Copilot configuration", () => {
 		});
 		expect(config.customAgents?.[0]?.prompt).toContain("read_repository_file");
 		expect(config.customAgents?.[0]?.prompt).not.toContain("You have `view`, `grep` and `glob`");
+	});
+
+	it("routes Planner and private workers through Anthropic while preserving repository auth", async () => {
+		let config = { model: "claude-fable-5-1", anthropic: { apiKey: "anthropic-test-key" } };
+		let result = {
+			name: "submit_job_result",
+			description: "submit",
+			parameters: {},
+			handler: () => "ok",
+		} as Tool;
+		let options = {
+			token: "ghu_owner",
+			name: "worker",
+			prompt: "Submit a result",
+			result,
+			maxAiCredits: 32,
+		};
+		let planner = plannerConfiguration(config, { tools: [] }, {
+			token: options.token,
+			repository: { id: "R_repo", owner: "octo-org", name: "score", defaultBranch: "main" },
+		});
+		let worker = workerConfiguration(config, options);
+		for (let session of [planner, worker]) {
+			expect(session.model).toBe("claude-fable-5-1");
+			expect(session.gitHubToken).toBeUndefined();
+			expect(session.provider).toEqual({
+				type: "anthropic",
+				baseUrl: "https://api.anthropic.com",
+				apiKey: "anthropic-test-key",
+				wireModel: "claude-fable-5-1",
+			});
+			expect(session.enableHostGitOperations).toBe(false);
+			expect(session.enableSkills).toBe(false);
+			expect(session.enableConfigDiscovery).toBe(false);
+		}
+		expect(planner.mcpServers?.github).toMatchObject({
+			headers: { Authorization: "Bearer ghu_owner" },
+		});
+		expect(JSON.stringify(planner.mcpServers)).not.toContain("anthropic-test-key");
+		expect(worker.sessionLimits).toBeUndefined();
+		expect(worker.mcpServers).toEqual({});
+		expect(worker.tools?.[0]?.isTerminal).toBe(true);
+		expect(() => publicResearchConfiguration(config, options)).toThrow("direct web-search");
+		let session = { rpc: { model: { getCurrent: async () => ({ modelId: config.model }) } } };
+		await expect(verifyModel(session as Parameters<typeof verifyModel>[0], config)).resolves
+			.toBeUndefined();
+		session.rpc.model.getCurrent = async () => ({ modelId: "claude-haiku-4.5" });
+		await expect(verifyModel(session as Parameters<typeof verifyModel>[0], config)).rejects.toThrow(
+			"different model",
+		);
 	});
 
 	it("gives a worker only its terminal result tool", async () => {

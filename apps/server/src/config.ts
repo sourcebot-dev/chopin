@@ -16,6 +16,8 @@ export type Config = {
 	port: number;
 	/** Planner model. */
 	model: string;
+	/** Direct Anthropic inference; absent for Copilot-backed inference. Never log this object. */
+	anthropic?: { apiKey: string };
 	/**
 	 * Whether to run the agent at all.
 	 *
@@ -45,6 +47,20 @@ export type Config = {
 
 const DEFAULT_PORT = 8787;
 const DEFAULT_MODEL = "claude-sonnet-4.6";
+
+function inference(): Pick<Config, "model" | "anthropic"> {
+	let provider = process.env.AGENT_PROVIDER?.trim() || "copilot";
+	if (provider !== "copilot" && provider !== "anthropic") {
+		throw new Error("AGENT_PROVIDER must be copilot or anthropic");
+	}
+	if (provider === "copilot") return { model: process.env.MODEL?.trim() || DEFAULT_MODEL };
+	let apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+	if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required for AGENT_PROVIDER=anthropic");
+	return {
+		model: process.env.MODEL?.trim() || "claude-fable-5-1",
+		anthropic: { apiKey },
+	};
+}
 
 function port(): number {
 	let raw = process.env.PORT;
@@ -79,7 +95,7 @@ export function load(): Config {
 	return {
 		host: process.env.SERVER_HOST || "127.0.0.1",
 		port: port(),
-		model: process.env.MODEL || DEFAULT_MODEL,
+		...inference(),
 		agent,
 		backgroundJobs,
 		webResearch: agent && backgroundJobs && process.env.WEB_RESEARCH !== "off",
@@ -107,6 +123,7 @@ export function describe(config: Config): string {
 		`http://${config.host}:${config.port}`,
 		config.devClient ? `client: vite (${config.devClient})` : "client: built",
 		config.agent ? `agent: ${config.model} (on demand)` : "agent: off",
+		`inference: ${config.anthropic ? "anthropic" : "copilot"}`,
 		config.backgroundJobs ? "background jobs: on" : "background jobs: off",
 		config.webResearch ? "web research: on" : "web research: off",
 		admission,
