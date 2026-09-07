@@ -1,6 +1,6 @@
 # Hosted agent (Planner)
 
-Chopin's Copilot-backed document agent is currently named Planner. It can
+Chopin's document agent is currently named Planner. It can
 inspect one selected GitHub repository, co-author the shared document, ask the
 participants structured questions, and anchor decisions to prose. For documents
 used as plans, it can also draft an implementation graph. It does not implement
@@ -13,14 +13,15 @@ that is an implementation limitation, not the document model's boundary.
 ## Ownership
 
 The first eligible editor to invoke the Planner or start a model-backed research
-request supplies the GitHub App user access token and Copilot entitlement for
-that channel. The user must pass instance admission and have
+request supplies the GitHub App user access token for that channel. Copilot
+inference also uses that user's entitlement. With `AGENT_PROVIDER=anthropic`,
+model calls instead use the deployment's Anthropic API key. The user must pass instance admission and have
 repository push or administration access. Ownership is assigned atomically in
 storage and guarded by a generation token.
 
-That process-local login owns the channel's Copilot usage until it expires, logs
+That process-local login owns the channel's repository authorization until it expires, logs
 out, the server restarts, or the authenticated reset API releases it. The
-current web application does not expose a reset control. A user without Copilot
+current web application does not expose a reset control. In Copilot mode, a user without Copilot
 entitlement sees the provider failure on the first model-backed action and
 remains owner until one of those release conditions occurs.
 
@@ -33,8 +34,13 @@ ownership generation.
 ## Runtime isolation
 
 The shared Copilot runtime runs in SDK `mode: "empty"`. Each disposable SDK
-session receives its owner's token when created and has no client-level service
-token or logged-in-user fallback.
+session has no client-level service token or logged-in-user fallback. Copilot
+sessions receive the owner's token as their model credential. Anthropic sessions
+receive a singular BYOK provider configuration with the deployment API key; the
+owner token is supplied separately only to repository tools and GitHub MCP.
+Private workers have no GitHub MCP server or model-level GitHub token in
+Anthropic mode. Both modes retain the same owner and repository permission
+checks.
 
 The Planner has no:
 
@@ -189,3 +195,34 @@ current production interface lets a person approve the draft. See
 - GitHub App session lifecycle: `apps/server/src/auth/session.ts`
 - Background job registry and runner: `apps/server/src/jobs/registry.ts` and
   `apps/server/src/jobs/runner.ts`
+
+## Anthropic inference
+
+`AGENT_PROVIDER=anthropic` uses the Copilot SDK's BYOK transport for Planner,
+document descriptions, private document analysis, and report synthesis. The
+runtime still ships with Chopin; a Copilot subscription is not required for
+Anthropic inference. GitHub sign-in and App repository access remain required.
+See [Self-hosting](self-hosting.md#anthropic-api-inference) for configuration.
+
+After selecting a custom agent, Chopin checks the selected model against the
+configured Anthropic model and refuses a mismatch. Runtime `assistant.usage`
+events log the model and token counts, without prompts or credentials. These
+logs provide evidence independent of an agent's self-description.
+
+Public research uses Anthropic's Messages API directly with only the disclosed
+query and the basic `web_search_20250305` server tool. It has no private document,
+repository, filesystem, or client tools. Search results and citations must agree;
+URLs in ordinary generated prose never establish source provenance. The existing
+public HTTPS and artifact bounds apply before publication. The direct search
+request preserves encrypted result and thinking blocks across `pause_turn`,
+allows at most three requests with five searches each, limits each response to
+2 MiB and 8,192 output tokens, and observes the job deadline and owner revocation.
+Provider errors and incomplete responses fail the job without publishing a child.
+
+GitHub's web-search MCP configuration is used only in Copilot mode. Private
+analysis and synthesis stay in separate no-web SDK sessions in both modes.
+
+`bun run test:anthropic` exercises the pinned CLI against a local mock Anthropic
+endpoint, including wire model/key routing, streaming, tool permission checks,
+and terminal results. It requires local socket access but no API key or Copilot
+login. It does not establish live model availability for a deployment's key.

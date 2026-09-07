@@ -16,6 +16,9 @@ function configured(overrides: Record<string, string | undefined> = {}) {
 	let env: Record<string, string | undefined> = {
 		...REQUIRED,
 		AGENT: undefined,
+		AGENT_PROVIDER: undefined,
+		ANTHROPIC_API_KEY: undefined,
+		MODEL: undefined,
 		BACKGROUND_JOBS: undefined,
 		WEB_RESEARCH: undefined,
 		GITHUB_ALLOWED_USERS: undefined,
@@ -47,6 +50,30 @@ describe("configuration", () => {
 		expect(description(config)).toContain("storage: postgres");
 		expect(description(config)).not.toContain("secret");
 		expect(description(config)).not.toContain(REQUIRED.SESSION_ENCRYPTION_KEY);
+	});
+
+	it("requires explicit Anthropic selection and keeps its key out of startup logs", () => {
+		let copilot = configured({ ANTHROPIC_API_KEY: "unused-key" });
+		expect(copilot.anthropic).toBeUndefined();
+		expect(copilot.model).toBe("claude-sonnet-4.6");
+		let config = configured({ AGENT_PROVIDER: "anthropic", ANTHROPIC_API_KEY: " secret-api-key " });
+		expect(config.model).toBe("claude-fable-5-1");
+		expect(config.anthropic).toEqual({ apiKey: "secret-api-key" });
+		expect(description(config)).toContain("inference: anthropic");
+		expect(description(config)).not.toContain("secret-api-key");
+		expect(configured({
+			AGENT_PROVIDER: "anthropic",
+			ANTHROPIC_API_KEY: "key",
+			MODEL: "claude-sonnet-4-6",
+		})).toMatchObject({ model: "claude-sonnet-4-6", anthropic: { apiKey: "key" } });
+	});
+
+	it("rejects invalid provider configuration rather than falling back to Copilot", () => {
+		expect(() => configured({ AGENT_PROVIDER: "other" })).toThrow("AGENT_PROVIDER");
+		for (let key of [undefined, "", " "]) {
+			expect(() => configured({ AGENT_PROVIDER: "anthropic", ANTHROPIC_API_KEY: key }))
+				.toThrow("ANTHROPIC_API_KEY");
+		}
 	});
 
 	it("defaults the built-in adapter to PostgreSQL", () => {

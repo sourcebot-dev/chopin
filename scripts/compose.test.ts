@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 const PREVIEW_CONFIGURATION = [
 	"AGENT",
+	"AGENT_PROVIDER",
+	"ANTHROPIC_API_KEY",
 	"BACKGROUND_JOBS",
 	"APP_ORIGIN",
 	"GITHUB_APP_SLUG",

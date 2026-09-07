@@ -38,7 +38,7 @@ export type SummaryEngine = (
 ) => Promise<{ description: string; model: string }>;
 
 export type DocumentSummaryOptions = {
-	config: Pick<Config, "agent" | "model">;
+	config: Pick<Config, "agent" | "model" | "anthropic">;
 	current: (channelId: string) => Promise<DocumentTarget | undefined>;
 	refresh: (target: DocumentTarget) => Promise<void>;
 	commitCurrent: (
@@ -202,9 +202,9 @@ export class StaleDocumentSummaryError extends Error {
 }
 
 class CopilotSummaryEngine {
-	#config: Pick<Config, "agent" | "model">;
+	#config: Pick<Config, "agent" | "model" | "anthropic">;
 
-	constructor(config: Pick<Config, "agent" | "model">) {
+	constructor(config: Pick<Config, "agent" | "model" | "anthropic">) {
 		this.#config = config;
 	}
 

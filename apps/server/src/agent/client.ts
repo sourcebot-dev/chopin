@@ -105,11 +105,20 @@ function workerCreditLimit(value: number): number {
 	return value;
 }
 
-function hardened(config: Pick<Config, "model">, token: string): SessionConfig {
+function hardened(config: Pick<Config, "model" | "anthropic">, token: string): SessionConfig {
 	return {
 		model: config.model,
 		largeOutput: { enabled: false },
-		gitHubToken: token,
+		...(config.anthropic
+			? {
+				provider: {
+					type: "anthropic" as const,
+					baseUrl: "https://api.anthropic.com",
+					apiKey: config.anthropic.apiKey,
+					wireModel: config.model,
+				},
+			}
+			: { gitHubToken: token }),
 		enableConfigDiscovery: false,
 		skipCustomInstructions: true,
 		enableOnDemandInstructionDiscovery: false,
@@ -129,7 +138,7 @@ function hardened(config: Pick<Config, "model">, token: string): SessionConfig {
 }
 
 export function plannerConfiguration(
-	config: Pick<Config, "model">,
+	config: Pick<Config, "model" | "anthropic">,
 	toolbox: Toolbox,
 	options: PlannerSession,
 ): SessionConfig {
@@ -172,7 +181,7 @@ export function plannerConfiguration(
 }
 
 export function workerConfiguration(
-	config: Pick<Config, "model">,
+	config: Pick<Config, "model" | "anthropic">,
 	options: WorkerSession,
 ): SessionConfig {
 	let result = { ...options.result, skipPermission: false, isTerminal: true };
@@ -186,7 +195,11 @@ export function workerConfiguration(
 	return {
 		...hardened(config, options.token),
 		streaming: false,
-		sessionLimits: { maxAiCredits: workerCreditLimit(options.maxAiCredits) },
+		// Copilot credits do not measure direct Anthropic usage. BYOK requests
+		// use the runtime's model token limits; job deadlines still bound execution.
+		sessionLimits: config.anthropic
+			? undefined
+			: { maxAiCredits: workerCreditLimit(options.maxAiCredits) },
 		availableTools: [`custom:${result.name}`],
 		tools: [result],
 		customAgents: [worker],
@@ -197,9 +210,12 @@ export function workerConfiguration(
 }
 
 export function publicResearchConfiguration(
-	config: Pick<Config, "model">,
+	config: Pick<Config, "model" | "anthropic">,
 	options: WorkerSession,
 ): SessionConfig {
+	if (config.anthropic) {
+		throw new Error("Anthropic public research uses the direct web-search evidence engine.");
+	}
 	let result = { ...options.result, skipPermission: false, isTerminal: true };
 	let worker: CustomAgentConfig = {
 		name: options.name,
@@ -398,9 +414,38 @@ export async function auditPublicResearchTools(
 	assertWorkerTools(tools, expected, true);
 }
 
+/** Reject a BYOK session if agent selection changed its requested model. */
+export async function verifyModel(
+	session: Pick<CopilotSession, "rpc">,
+	config: Pick<Config, "model" | "anthropic">,
+): Promise<void> {
+	if (!config.anthropic) return;
+	let current = await bounded(session.rpc.model.getCurrent(), "Model verification timed out.");
+	if (current.modelId !== config.model) {
+		throw new Error("The runtime selected a different model from the configured Anthropic model.");
+	}
+}
+
+function observeUsage(session: CopilotSession, config: Pick<Config, "anthropic">): void {
+	session.on(event => {
+		if (event.type !== "assistant.usage") return;
+		let { model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } = event.data;
+		console.log(`[agent] ${
+			JSON.stringify({
+				provider: config.anthropic ? "anthropic" : "copilot",
+				model,
+				inputTokens,
+				outputTokens,
+				cacheReadTokens,
+				cacheWriteTokens,
+			})
+		}`);
+	});
+}
+
 /** Create a disposable session authenticated and scoped to one owner and repository. */
 export async function openPlanner(
-	config: Pick<Config, "agent" | "model">,
+	config: Pick<Config, "agent" | "model" | "anthropic">,
 	toolbox: Toolbox,
 	options: PlannerSession,
 ): Promise<Agent> {
@@ -408,6 +453,8 @@ export async function openPlanner(
 	let session = await runtime.open(plannerConfiguration(config, toolbox, options));
 	try {
 		await session.rpc.agent.select({ name: NAME });
+		await verifyModel(session, config);
+		observeUsage(session, config);
 		await audit(session);
 		return { session, id: session.sessionId };
 	} catch (err) {
@@ -418,13 +465,15 @@ export async function openPlanner(
 
 /** Create a disposable isolated session for one registered background attempt. */
 export async function openWorker(
-	config: Pick<Config, "agent" | "model">,
+	config: Pick<Config, "agent" | "model" | "anthropic">,
 	options: WorkerSession,
 ): Promise<Agent> {
 	if (!config.agent) throw new Error("The hosted agent is disabled.");
 	let session = await runtime.open(workerConfiguration(config, options));
 	try {
 		await session.rpc.agent.select({ name: options.name });
+		await verifyModel(session, config);
+		observeUsage(session, config);
 		await auditWorker(session, options.result.name);
 		return { session, id: session.sessionId };
 	} catch (err) {
@@ -435,13 +484,14 @@ export async function openWorker(
 
 /** Create a public-web worker with no private document or repository capabilities. */
 export async function openPublicResearchWorker(
-	config: Pick<Config, "agent" | "model">,
+	config: Pick<Config, "agent" | "model" | "anthropic">,
 	options: WorkerSession,
 ): Promise<Agent> {
 	if (!config.agent) throw new Error("The hosted agent is disabled.");
 	let session = await runtime.open(publicResearchConfiguration(config, options));
 	try {
 		await session.rpc.agent.select({ name: options.name });
+		observeUsage(session, config);
 		await auditPublicResearchTools(session, options.result.name);
 		return { session, id: session.sessionId };
 	} catch (err) {

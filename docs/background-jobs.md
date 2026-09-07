@@ -436,7 +436,8 @@ recoverable on a later read because observer delivery is not a durable queue.
 ## Credentials and ownership
 
 `credential: "active-planner"` means the job uses the channel's existing
-Planner owner and Copilot entitlement. The runner resolves ownership through
+Planner owner for authorization, and that owner's Copilot entitlement in Copilot
+mode. Anthropic mode uses the deployment API key for inference. The runner resolves ownership through
 `ActiveOwnerBindings`; it never claims ownership itself. An explicit product
 action may establish ownership before enqueueing. Without an available owner,
 the job pauses as `owner-unavailable`.
@@ -495,7 +496,15 @@ the maximum aggregate credits for one job attempt. A model-backed executor must
 set per-session limits whose possible total does not exceed it; for example, a
 60-credit two-stage job can allocate 30 credits to each worker. The current
 worker helper requires at least 30 credits per session. Keep definition metadata
-and actual worker construction synchronized.
+and actual worker construction synchronized in Copilot mode.
+
+Anthropic BYOK does not use Copilot credit accounting, so SDK sessions omit
+`maxAiCredits`. Job deadlines and input/artifact bounds still apply. Direct public
+research permits at most three Anthropic requests, five web searches per request,
+and 8,192 output tokens per response; results are bounded to 2 MiB before parsing.
+Private workers use the pinned SDK runtime's model token limits. No per-job dollar
+budget is enforced in Anthropic mode; see
+[Anthropic API inference](self-hosting.md#anthropic-api-inference).
 
 Always recheck `credential.authorize`, observe credential and job abort signals,
 and discard the SDK session in `finally`.
