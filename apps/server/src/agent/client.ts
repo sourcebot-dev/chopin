@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { AnthropicRequestHandler } from "./anthropic-request";
 import { locate } from "./cli";
 import {
 	gate,
@@ -253,6 +254,7 @@ function connect() {
 	let home = mkdtempSync(join(tmpdir(), "chopin-copilot-"));
 	try {
 		let client = new CopilotClient({
+			requestHandler: new AnthropicRequestHandler(),
 			mode: "empty",
 			workingDirectory: home,
 			baseDirectory: home,

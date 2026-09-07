@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { AnthropicRequestHandler } from "./anthropic-request";
 import { locate } from "./cli";
 import { plannerConfiguration, RUNTIME_ENV, verifyModel, workerConfiguration } from "./client";
 import { NAME } from "./planner";
@@ -65,11 +66,30 @@ async function runtime(
 	respond: (request: Request) => Promise<Response>,
 	run: (session: CopilotSession) => Promise<void>,
 ) {
-	let server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: respond });
+	let server = Bun.serve({
+		hostname: "127.0.0.1",
+		port: 0,
+		async fetch(request) {
+			let body = await request.clone().json() as Record<string, unknown>;
+			for (let field of ["temperature", "top_p", "top_k"]) {
+				if (field in body) {
+					return Response.json({
+						type: "error",
+						error: {
+							type: "invalid_request_error",
+							message: `${field} is deprecated for this model.`,
+						},
+					}, { status: 400 });
+				}
+			}
+			return respond(request);
+		},
+	});
 	let directory = mkdtempSync(join(tmpdir(), "chopin-anthropic-test-"));
 	let cli = locate();
 	if (!cli.ok) throw new Error(cli.reason);
 	let client = new CopilotClient({
+		requestHandler: new AnthropicRequestHandler(server.url.origin),
 		mode: "empty",
 		workingDirectory: directory,
 		baseDirectory: directory,
